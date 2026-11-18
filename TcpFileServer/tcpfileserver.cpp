@@ -37,6 +37,47 @@ void TcpFileServer::start()
     while(!tcpServer.isListening())tcpServer.listen(QHostAddress::AnyIPv4,16998);
     serverStatusLabel->setText(tr("監聽中..."));
 }
-void TcpFileServer::acceptConnection(){}
-void TcpFileServer::updateServerProgress(){}
+void TcpFileServer::acceptConnection()
+{
+    tcpServerConnection = tcpServer.nextPendingConnection();
+    connect(tcpServerConnection,SIGNAL(readyRead()),this,SLOT(updateServerProgress()));
+    connect(tcpServerConnection,SIGNAL(error(QAbstractSocket::SocketError)),this,SLOT(displayError(QAbstractSocket::SocketError)));
+    serverStatusLabel->setText(tr("接受連線"));
+    tcpServer.close();
+}
+void TcpFileServer::updateServerProgress()
+{
+    QDataStream in(tcpServerConnection);
+    in.setVersion(QDataStream::Qt_4_6);
+    if(byteReceived <= sizeof(qint64)*2){
+        if(fileNameSize==0&&(tcpServerConnection->bytesAvailable())>=sizeof(qint64)*2)
+        {
+            in>>totalBytes>>fileNameSize;
+            byteReceived+=sizeof(qint64)*2;
+        }
+        if((fileNameSize !=0)&&(tcpServerConnection->bytesAvailable()>=fileNameSize))
+        {
+            in>>fileName;
+            byteReceived+=fileNameSize;
+            localFile=new QFile(fileName);
+            if(!localFile->open(QFile::WriteOnly))
+            {
+                QMessageBox::warning(this,tr("應用程式"),tr("無罰讀取檔案 %1 : \n%2.").arg(fileName).arg(localFile->errorString()));
+                return;
+            }
+        }
+        else
+        {
+            return;
+        }
+
+    }
+    if(byteReceived<totalBytes)
+    {
+        byteReceived+=tcpServerConnection->bytesAvailable();
+        inBlock = tcpServerConnection->readAll();
+        localFile->write(inBlock);
+        inBlock.resize(0);
+    }
+}
 void TcpFileServer::displayError(QAbstractSocket::SocketError socketError){}
